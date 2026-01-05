@@ -1,0 +1,75 @@
+﻿#pragma kernel CSMain
+
+struct TriangleData
+{
+    float3 vertex0;
+    float3 vertex1;
+    float3 vertex2;
+    float2 uv0;
+    float2 uv1;
+    float2 uv2;
+    float3 normal0;
+    float3 normal1;
+    float3 normal2;
+    float4 tangent0;
+    float4 tangent1;
+    float4 tangent2;
+};
+
+int _indexStart; 
+int _triangleCount;
+
+StructuredBuffer<float3> _vertex;
+StructuredBuffer<float2> _uv;
+StructuredBuffer<float3> _normal;
+StructuredBuffer<float4> _tangents;
+StructuredBuffer<int> _triangle;
+
+RWStructuredBuffer<TriangleData> _outTriangles;
+
+[numthreads(64, 1, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    // 삼각형 정보 0 ~ 63.
+    uint triId = id.x;
+
+    if (triId >= _triangleCount)
+        return;
+
+    // 3개씩 끊어서 삼각형 정보 저장 
+    int triangleIndex = _indexStart + int(triId) * 3;
+
+    int i0 = _triangle[triangleIndex + 0];
+    int i1 = _triangle[triangleIndex + 1];
+    int i2 = _triangle[triangleIndex + 2];
+
+    float3 v0 = _vertex[i0];
+    float3 v1 = _vertex[i1];
+    float3 v2 = _vertex[i2];
+
+    // frac : 소수만 반환(원본 UV값이 Wrapping 되어 있어 해당 상황을 처리하기 위함)
+    float2 u0 = frac(_uv[i0]);
+    float2 u1 = frac(_uv[i1]);
+    float2 u2 = frac(_uv[i2]);
+
+    float3 n0 = _normal[i0];
+    float3 n1 = _normal[i1];
+    float3 n2 = _normal[i2];
+
+    float4 t0 = _tangents[i0];
+    float4 t1 = _tangents[i1];
+    float4 t2 = _tangents[i2];
+
+    _outTriangles[triId].vertex0 = v0;
+    _outTriangles[triId].vertex1 = v1;
+    _outTriangles[triId].vertex2 = v2;
+    _outTriangles[triId].uv0 = u0;
+    _outTriangles[triId].uv1 = u1;
+    _outTriangles[triId].uv2 = u2;
+    _outTriangles[triId].normal0 = n0;
+    _outTriangles[triId].normal1 = n1;
+    _outTriangles[triId].normal2 = n2;
+    _outTriangles[triId].tangent0 = t0;
+    _outTriangles[triId].tangent1 = t1;
+    _outTriangles[triId].tangent2 = t2;
+}

@@ -1,0 +1,163 @@
+﻿#pragma kernel CSMain
+
+struct UVData
+{
+	float2 maxUV;
+	float2 minUV;
+};
+
+StructuredBuffer<float3> _vertex;
+StructuredBuffer<float2> _uv;
+StructuredBuffer<int> _triangle;
+Texture2D<float4> _originTexture;
+
+int _indexStart;
+int _triangleCount;
+int _textureWidth;
+int _textureHeight;
+
+RWTexture2D<float4> _maskTexture;
+RWStructuredBuffer<UVData> _outUV;
+
+bool CheckPointInTriangle(float2 point0, float2 point1, float2 point2, float2 targetPoint)
+{
+	// 무게 중심 좌표 기반으로 내부의 점 검사 https://blackpawn.com/texts/pointinpoly/
+	float2 v0 = point2 - point0;
+	float2 v1 = point1 - point0;
+	float2 v2 = targetPoint - point0;
+
+	float d00 = dot(v0, v0);
+	float d01 = dot(v0, v1);
+	float d11 = dot(v1, v1);
+	float d20 = dot(v2, v0);
+	float d21 = dot(v2, v1);
+
+	float denom = d00 * d11 - d01 * d01;
+	float v = (d11 * d20 - d01 * d21) / denom;
+	float w = (d00 * d21 - d01 * d20) / denom;
+	float u = 1.0f - v - w;
+
+	return (u >= 0.0f) && (v >= 0.0f) && (w >= 0.0f);
+}
+
+// UV -> Texture의 Pixel좌표로 변환
+float2 GetPixelCoord(float2 uvCoord)
+{
+	float2 pixelCoord;
+
+	pixelCoord.x = round(uvCoord.x * _textureWidth);
+	pixelCoord.y = round(uvCoord.y * _textureHeight);
+
+	return pixelCoord;
+}
+
+float2 GetPixelMinBoundary(float2 point0, float2 point1, float2 point2)
+{
+	float2 minBoundary;
+
+	minBoundary.x = floor(min(point0.x, min(point1.x, point2.x)));
+	minBoundary.y = floor(min(point0.y, min(point1.y, point2.y)));
+
+	return minBoundary;
+}
+
+float2 GetPixelMaxBoundary(float2 point0, float2 point1, float2 point2)
+{
+	float2 maxBoundary;
+
+	maxBoundary.x = ceil(max(point0.x, max(point1.x, point2.x)));
+	maxBoundary.y = ceil(max(point0.y, max(point1.y, point2.y)));
+
+	return maxBoundary;
+}
+
+float2 GetUVMinBoundary(float2 uv0, float2 uv1, float2 uv2)
+{
+	float2 minBoundary;
+
+	minBoundary.x = (min(uv0.x, min(uv1.x, uv2.x)));
+	minBoundary.y = (min(uv0.y, min(uv1.y, uv2.y)));
+
+	return minBoundary;
+}
+
+float2 GetUVMaxBoundary(float2 uv0, float2 uv1, float2 uv2)
+{
+	float2 maxBoundary;
+
+	maxBoundary.x = (max(uv0.x, max(uv1.x, uv2.x)));
+	maxBoundary.y = (max(uv0.y, max(uv1.y, uv2.y)));
+
+	return maxBoundary;
+}
+
+float2 GetCenterPoint(float2 p0, float2 p1, float2 p2)
+{
+	float2 centerPoint;
+	
+	centerPoint.x = (p0.x + p1.x + p2.x) / 3.0;
+	centerPoint.y = (p0.y + p1.y + p2.y) / 3.0;
+
+	return centerPoint;
+}
+
+float2 IncreasePointByCenterPoint(float2 p, float2 centerPoint)
+{
+	float2 dir = (p - centerPoint);
+	dir = normalize(dir);
+
+	if (dir.x != 0)
+		p.x = dir.x > 0 ? p.x + 15 : p.x - 15;
+
+	if (dir.y != 0)
+		p.y = dir.y > 0 ? p.y + 15 : p.y - 15;
+
+	return p;
+}
+
+[numthreads(64, 1, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	uint triId = id.x;
+
+	if (triId >= _triangleCount)
+		return;
+
+	int triangleIndex = _indexStart + int(triId) * 3;
+
+	int i0 = _triangle[triangleIndex + 0];
+	int i1 = _triangle[triangleIndex + 1];
+	int i2 = _triangle[triangleIndex + 2];
+
+	float2 p0 = GetPixelCoord(frac(_uv[i0]));
+	float2 p1 = GetPixelCoord(frac(_uv[i1]));
+	float2 p2 = GetPixelCoord(frac(_uv[i2]));
+
+	float2 centerPoint = GetCenterPoint(p0, p1, p2);
+
+	p0 = IncreasePointByCenterPoint(p0, centerPoint);
+	p1 = IncreasePointByCenterPoint(p1, centerPoint);
+	p2 = IncreasePointByCenterPoint(p2, centerPoint);
+
+	float2 minBoundary = GetPixelMinBoundary(p0, p1, p2);
+	float2 maxBoundary = GetPixelMaxBoundary(p0, p1, p2);
+
+	_outUV[triId].maxUV = GetUVMaxBoundary(frac(_uv[i0]), frac(_uv[i1]), frac(_uv[i2]));
+	_outUV[triId].minUV = GetUVMinBoundary(frac(_uv[i0]), frac(_uv[i1]), frac(_uv[i2]));
+
+	for (int y = int(minBoundary.y); y < int(maxBoundary.y); y++)
+	{
+		for (int x = int(minBoundary.x); x < int(maxBoundary.x); x++)
+		{
+			if (x < 0 || y < 0 || x >= _textureWidth || y >= _textureHeight)
+				continue;
+
+			float2 targetPoint = float2(x, y);
+
+			if (CheckPointInTriangle(p0, p1, p2, targetPoint))
+			{
+				_maskTexture[float2(x, y)] = _originTexture[float2(x, y)];
+			}
+		}
+	}
+}
