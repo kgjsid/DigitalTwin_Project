@@ -6,6 +6,10 @@ using System;
 
 public class TerrainMeshSplitter
 {
+    // 1. 원본 Mesh 데이터(vertex, uv, tangents, normal, triangleIndex)값 전달 
+    // 2. 공유 정점을 모두 분리하여 삼각형 데이터로 분리(GPU)
+    // 3. 배열을 다시 CPU로 전달받아 중복된 정점을 제거하고, 하나의 Mesh로 통합
+
     public Mesh originMesh;
     public MeshRenderer originMeshRenderer;
     public List<MeshFilter> meshFilterList;
@@ -21,6 +25,7 @@ public class TerrainMeshSplitter
     private ComputeBuffer triangleBuffer;       // 전달할 triangle 데이터(int)
 
     private ComputeBuffer[] outputBuffer;       // 전달 받을 삼각형 Mesh 데이터(vertex, uv, normal, tangent 각각 3개씩)
+    // 중복된 정점을 처리하기 위한 Dictionary
     private Dictionary<VertexData, int> vertexDic;
 
     private int[] frontFaceArray;
@@ -129,6 +134,12 @@ public class TerrainMeshSplitter
         outputBuffer[subMeshIndex] = new ComputeBuffer(meshTriangle.Length / 3, sizeof(float) * ((3 + 2 + 3 + 4) * 3));
 
         // ComputeBuffer에 데이터 저장
+        /* OriginMesh 전달 이유
+         * 3DMax에서 데이터가 넘어올 때, Vertex 중복을 피하기 위한 처리를 추가로 해주시는 것 같음
+         * 그래서 데이터가 연속적이지 않음(하나의 삼각형에 Index가 2, 3, 19002 이런 식으로 사용됨)
+         * 실제 SubMesh가 사용하는 Vertex만 찾으려면 전 Vertex를 탐색하는 과정이 필수적 -> 비효율적(캐시 비효율성도 문제)
+         * 그래서 OriginMesh 데이터를 통으로 전달하는 것이 훨씬 빠르게 처리됨
+         */
         vertexBuffer.SetData(originMesh.vertices);
         uvBuffer.SetData(originMesh.uv);
         normalBuffer.SetData(originMesh.normals);

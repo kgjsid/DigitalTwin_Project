@@ -1,5 +1,6 @@
 ﻿#pragma kernel CSMain
 
+// Cs 파일의 구조체와 연결(TerrainMeshSplitter.TriangleData)
 struct TriangleData
 {
     float3 vertex0;
@@ -16,15 +17,16 @@ struct TriangleData
     float4 tangent2;
 };
 
-int _indexStart; 
-int _triangleCount;
+int _indexStart;                    // 처리할 SubMeshIndex의 시작점(TriangleIndex) 
+int _triangleCount;                 // 처리할 삼각형의 총 개수
 
-StructuredBuffer<float3> _vertex;
-StructuredBuffer<float2> _uv;
-StructuredBuffer<float3> _normal;
-StructuredBuffer<float4> _tangents;
-StructuredBuffer<int> _triangle;
+StructuredBuffer<float3> _vertex;   // 정점
+StructuredBuffer<float2> _uv;       // UV 값
+StructuredBuffer<float3> _normal;   // 노말벡터
+StructuredBuffer<float4> _tangents; // 탄젠트 벡터
+StructuredBuffer<int> _triangle;    // 인덱스 배열
 
+// RW : Read, Write 읽고 쓰기 가능한 버퍼
 RWStructuredBuffer<TriangleData> _outTriangles;
 
 [numthreads(64, 1, 1)]
@@ -33,6 +35,9 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     // 삼각형 정보 0 ~ 63.
     uint triId = id.x;
 
+    // 예외처리. 만약 삼각형의 수보다 더 큰 스레드를 실행시키면, 해당 스레드는 실행하지 않음
+    // ex) 64개의 단위로 실행됨.(64, 1, 1)
+    // 100개의 수라면, 128개를 실행하면 그보다 넘는 경우 예외처리 필요
     if (triId >= _triangleCount)
         return;
 
@@ -47,7 +52,6 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     float3 v1 = _vertex[i1];
     float3 v2 = _vertex[i2];
 
-    // frac : 소수만 반환(원본 UV값이 Wrapping 되어 있어 해당 상황을 처리하기 위함)
     float2 u0 = frac(_uv[i0]);
     float2 u1 = frac(_uv[i1]);
     float2 u2 = frac(_uv[i2]);
