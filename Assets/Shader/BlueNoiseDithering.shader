@@ -45,11 +45,9 @@ Shader "Custom/SimpleBlueNoiseDither"
                 float2 pixelPos = screenUV * _ScreenParams.xy;
 
                 // 2. 블루노이즈 샘플링 (256x256 타일링)
-                // _BlueNoiseTex의 Wrap Mode가 'Repeat'이어야 합니다.
                 float noise = tex2D(_BlueNoiseTex, pixelPos / 256.0).r;
 
                 // 3. 디더링 판정: 알파값이 노이즈보다 작으면 해당 픽셀 삭제
-                // _Color.a를 0.5로 두면 절반의 픽셀이 사라집니다.
                 clip(_Color.a - noise);
 
                 return _Color;
